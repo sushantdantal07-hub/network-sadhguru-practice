@@ -4,6 +4,16 @@ export default function Home() {
   return (
     <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
       <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
+        <h1 className="text-4xl font-bold text-center mb-6">
+  Welcome to Network Sadhguru Practice 🚀
+</h1>
+<a
+  href="/dashboard"
+  className="mt-4 px-6 py-3 bg-blue-600 text-white rounded-xl shadow-md hover:bg-blue-700 transition"
+>
+  Go to Dashboard
+</a>
+
         <Image
           className="dark:invert"
           src="/next.svg"
@@ -13,13 +23,10 @@ export default function Home() {
           priority
         />
         <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
+<li className="mb-2 tracking-[-0.01em]">
+  🚀 Welcome to <b>Network Sadhguru Practice</b> — Your AI + Networking Lab Hub!
+</li>
+          
           <li className="tracking-[-.01em]">
             Save and see your changes instantly.
           </li>
