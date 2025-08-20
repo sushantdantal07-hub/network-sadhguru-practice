@@ -1,175 +1,231 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
-import { Card, CardHeader, CardTitle, CardContent, Button, Input, Badge } from "@/components/ui";
+import React, { useRef, useState } from "react";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  Button,
+  Badge,
+  Input,
+} from "@/components/ui";
 
 /**
- * Practice — Split-screen lab
+ * Practice – Split-screen lab
  * - GUI (left)
  * - CLI (right)
- * Defaults: GUI actions do NOT echo into CLI (restores your earlier behavior).
- * A small toggle lets you enable echo when needed.
+ * Notes:
+ *  - Echo toggle controls whether GUI buttons write into the CLI buffer.
+ *  - “Practice / Steps / Hints” live under the CLI.
  */
 
 export default function PracticePage() {
-  // CLI state
-  const [cliOutput, setCliOutput] = useState<string[]>([
-    // start empty and calm — no auto messages
+  // CLI text buffer
+  const [cli, setCli] = useState<string[]>([
+    "> show version",
+    "FTD 7.3.0 (mock build)  Model: FTDv  Managed by: FMC  License(s): Threat, URL",
+    "",
   ]);
-  const [cliInput, setCliInput] = useState("");
-  const [echoGuiToCli, setEchoGuiToCli] = useState(false); // <-- default OFF (your earlier behavior)
+  const [cmd, setCmd] = useState("");
+  const cliBoxRef = useRef<HTMLDivElement>(null);
 
-  const cliEndRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    cliEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [cliOutput]);
+  // Echo GUI buttons into CLI?
+  const [echoOn, setEchoOn] = useState<boolean>(false);
 
-  // --- CLI command handling (mock) ---
-  function runCommand(raw: string) {
-    const cmd = raw.trim();
-    if (!cmd) return;
+  // Scroll helper
+  const scrollToBottom = () => {
+    requestAnimationFrame(() => {
+      cliBoxRef.current?.scrollTo({ top: cliBoxRef.current.scrollHeight, behavior: "smooth" });
+    });
+  };
 
-    // show a simple prompt-like prefix
-    const prompt = `> ${cmd}`;
-    const lines: string[] = [prompt];
+  const push = (line: string | string[]) => {
+    setCli((old) => {
+      const next = Array.isArray(line) ? [...old, ...line] : [...old, line];
+      return next;
+    });
+    scrollToBottom();
+  };
 
-    switch (cmd.toLowerCase()) {
-      case "show version":
-        lines.push(
-          "FTD 7.3.0 (mock build)  Model: FTDv  Managed by: FMC  License(s): Threat, URL"
-        );
-        break;
-      case "show interface":
-      case "show interfaces":
-        lines.push(
-          "Gig0/0 (inside) 10.1.1.1/24 up   Gig0/1 (outside) 172.16.0.1/24 up   Mgmt 192.168.1.10/24 up"
-        );
-        break;
-      case "ping 8.8.8.8":
-        lines.push("Sending 5, 100-byte ICMP Echos to 8.8.8.8:");
-        lines.push("!!!!!  Success rate is 100 percent (5/5), round-trip min/avg/max = 2/4/9 ms");
-        break;
-      default:
-        lines.push("Unknown command (mock). Try: show version | show interface | ping 8.8.8.8");
+  // ---------------------
+  // GUI button handlers
+  // ---------------------
+  const onAddNat = () => {
+    if (!echoOn) return;
+    push([
+      "> configure terminal",
+      "nat (inside,outside) source static OBJ_IN OBJ_OUT destination",
+      "static any any",
+      "write memory",
+      "",
+    ]);
+  };
+
+  const onCreateVpn = () => {
+    if (!echoOn) return;
+    push([
+      "> vpn wizard",
+      "peer 203.0.113.10 pre-shared-key *****",
+      "ikev2 enable",
+      "crypto map OUTSIDE-MAP 10 match address VPN-ACL",
+      "write memory",
+      "",
+    ]);
+  };
+
+  const onApplyPolicy = () => {
+    if (!echoOn) return;
+    push([
+      "> policy deploy",
+      "Pushing Access Control Policy to FTD...",
+      "Success.",
+      "",
+    ]);
+  };
+
+  // ---------------------
+  // CLI execution
+  // ---------------------
+  const runCmd = (raw: string) => {
+    const c = raw.trim();
+    if (!c) return;
+
+    // Echo the entered command
+    push(`> ${c}`);
+
+    // Mock responses
+    if (c === "show version") {
+      push([
+        "FTD 7.3.0 (mock build)  Model: FTDv  Managed by: FMC  License(s): Threat, URL",
+        "",
+      ]);
+    } else if (c === "show interface") {
+      push([
+        "Gig0/0 (inside) 10.1.1.1/24 up   Gig0/1 (outside) 172.16.0.1/24 up   Mgmt 192.168.1.10/24 up",
+        "",
+      ]);
+    } else if (c.startsWith("ping ")) {
+      push([
+        "Sending 5, 100-byte ICMP Echos...",
+        "!!!!!  Success rate is 100 percent (5/5), round-trip min/avg/max = 2/4/9 ms",
+        "",
+      ]);
+    } else if (c === "clear") {
+      setCli([]);
+    } else {
+      push(["(mock) command accepted.", ""]);
     }
 
-    setCliOutput((prev) => [...prev, ...lines]);
-    setCliInput("");
-  }
+    setCmd("");
+  };
 
-  // --- GUI actions (do NOT echo to CLI unless toggled) ---
-  function guiAction(action: "nat" | "vpn" | "policy") {
-    if (!echoGuiToCli) {
-      // keep quiet by default — this restores your earlier behavior
-      return;
-    }
-    // If echo is ON, append realistic, short mock sequences (still non-intrusive)
-    const map: Record<typeof action, string[]> = {
-      nat: [
-        "> configure terminal",
-        "nat (inside,outside) source static OBJ_IN OBJ_OUT destination static any any",
-        "write memory",
-      ],
-      vpn: [
-        "> configure terminal",
-        "crypto ikev2 policy 10",
-        "tunnel-group 1.1.1.1 type ipsec-l2l",
-        "write memory",
-      ],
-      policy: [
-        "> configure terminal",
-        "access-control-policy Sadhguru-ACP",
-        "deploy",
-      ],
-    };
-    setCliOutput((prev) => [...prev, ...(map[action] || [])]);
-  }
+  // Quick-add chips
+  const tryChip = (txt: string) => runCmd(txt);
 
   return (
-    <div className="min-h-[calc(100vh-80px)] p-5 bg-gradient-to-b from-white to-slate-50">
-      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Left: GUI */}
-        <Card className="shadow-sm">
-          <CardHeader className="flex items-center justify-between">
+    <div className="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* LEFT – GUI */}
+      <Card className="h-full">
+        <CardHeader className="items-start">
+          <div className="flex w-full items-center justify-between">
             <CardTitle>GUI (Firewall Simulator)</CardTitle>
-            <div className="flex items-center gap-2 text-xs">
+
+            <div className="flex gap-2">
               <Badge>Practice</Badge>
               <Button
-                className={echoGuiToCli ? "bg-indigo-50" : ""}
-                onClick={() => setEchoGuiToCli((s) => !s)}
+                className={echoOn ? "bg-indigo-600 text-white" : ""}
+                onClick={() => setEchoOn((v) => !v)}
+                title="Toggle whether GUI actions should echo into CLI"
               >
-                {echoGuiToCli ? "Echo GUI ➜ CLI: ON" : "Echo GUI ➜ CLI: OFF"}
+                Echo GUI → CLI: {echoOn ? "ON" : "OFF"}
               </Button>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Button
-              className="w-full justify-start"
-              onClick={() => guiAction("nat")}
-              aria-label="Add NAT Rule"
-            >
-              <span className="mr-2">➕</span> Add NAT Rule
-            </Button>
+          </div>
+        </CardHeader>
 
-            <Button
-              className="w-full justify-start"
-              onClick={() => guiAction("vpn")}
-              aria-label="Create VPN"
-            >
-              <span className="mr-2">🔒</span> Create VPN
-            </Button>
+        <CardContent className="flex flex-col gap-4">
+          <Button onClick={onAddNat}>
+            <span className="mr-2">➕</span> Add NAT Rule
+          </Button>
 
-            <Button
-              className="w-full justify-start"
-              onClick={() => guiAction("policy")}
-              aria-label="Apply Policy"
-            >
-              <span className="mr-2">🛡️</span> Apply Policy
-            </Button>
-          </CardContent>
-        </Card>
+          <Button onClick={onCreateVpn}>
+            <span className="mr-2">🔒</span> Create VPN
+          </Button>
 
-        {/* Right: CLI */}
-        <Card className="shadow-sm">
-          <CardHeader className="flex items-center justify-between">
+          <Button onClick={onApplyPolicy}>
+            <span className="mr-2">🛡️</span> Apply Policy
+          </Button>
+        </CardContent>
+      </Card>
+
+      {/* RIGHT – CLI */}
+      <Card className="h-full">
+        <CardHeader className="items-start">
+          <div className="flex w-full items-center justify-between">
             <CardTitle>CLI Simulator</CardTitle>
-            <div className="flex items-center gap-2 text-xs">
-              <span>Try:</span>
-              <Button onClick={() => runCommand("show version")} className="bg-slate-50">
-                show version
-              </Button>
-              <Button onClick={() => runCommand("show interface")} className="bg-slate-50">
-                show interface
-              </Button>
-              <Button onClick={() => runCommand("ping 8.8.8.8")} className="bg-slate-50">
-                ping 8.8.8.8
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="h-72 overflow-auto rounded-xl bg-black text-green-300 font-mono text-sm p-3">
-              {cliOutput.map((line, i) => (
-                <div key={i} className="whitespace-pre-wrap">
-                  {line}
-                </div>
-              ))}
-              <div ref={cliEndRef} />
-            </div>
 
-            <div className="flex items-center gap-2 mt-3">
-              <Input
-                placeholder="Enter command…"
-                value={cliInput}
-                onChange={(e) => setCliInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") runCommand(cliInput);
-                }}
-              />
-              <Button onClick={() => runCommand(cliInput)}>Run</Button>
+            <div className="flex gap-2">
+              <Badge>Try:</Badge>
+              <Button onClick={() => tryChip("show version")}>show version</Button>
+              <Button onClick={() => tryChip("show interface")}>show interface</Button>
+              <Button onClick={() => tryChip("ping 8.8.8.8")}>ping 8.8.8.8</Button>
             </div>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </CardHeader>
+
+        <CardContent className="space-y-4">
+          {/* CLI output */}
+          <div
+            ref={cliBoxRef}
+            className="h-72 w-full rounded-xl bg-black text-green-300 font-mono text-sm p-4 overflow-auto"
+          >
+            {cli.map((line, i) => (
+              <div key={i} className="whitespace-pre-wrap">
+                {line}
+              </div>
+            ))}
+          </div>
+
+          {/* CLI input */}
+          <div className="flex gap-2">
+            <Input
+              placeholder="Enter command… (try: show version, show interface, ping 8.8.8.8, clear)"
+              value={cmd}
+              onChange={(e) => setCmd(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") runCmd(cmd);
+              }}
+            />
+            <Button onClick={() => runCmd(cmd)}>Run</Button>
+          </div>
+
+          {/* Practice / Steps / Hints */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Steps</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm space-y-1">
+                <div>1) Add a NAT rule (GUI) then verify with <code>show interface</code>.</div>
+                <div>2) Create a site-to-site VPN (GUI).</div>
+                <div>3) Deploy policy (GUI) and ping 8.8.8.8.</div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Hints</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm space-y-1">
+                <div>• Toggle <b>Echo GUI → CLI</b> to inject GUI actions into CLI output.</div>
+                <div>• Use <code>clear</code> to wipe the terminal.</div>
+                <div>• These commands are mocked for practice flow.</div>
+              </CardContent>
+            </Card>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
