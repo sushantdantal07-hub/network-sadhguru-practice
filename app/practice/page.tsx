@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Card,
   CardHeader,
@@ -11,217 +11,371 @@ import {
   Input,
 } from "@/components/ui";
 
-/**
- * Practice – Split-screen lab
- * - GUI (left)
- * - CLI (right)
- * Notes:
- *  - Echo toggle controls whether GUI buttons write into the CLI buffer.
- *  - “Practice / Steps / Hints” live under the CLI.
- */
+// ---------- Types ----------
+type PracticeKey = "onboard" | "acp" | "nat" | "s2s";
 
-export default function PracticePage() {
-  // CLI text buffer
-  const [cli, setCli] = useState<string[]>([
-    "> show version",
-    "FTD 7.3.0 (mock build)  Model: FTDv  Managed by: FMC  License(s): Threat, URL",
-    "",
-  ]);
-  const [cmd, setCmd] = useState("");
-  const cliBoxRef = useRef<HTMLDivElement>(null);
+type DeviceRow = {
+  ip: string;
+  regKey: string;
+  licenses: string[];
+  state: "Pending" | "Registered" | "Approved";
+};
 
-  // Echo GUI buttons into CLI?
-  const [echoOn, setEchoOn] = useState<boolean>(false);
+// ---------- Helpers ----------
+const pill = (txt: string) => (
+  <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 border border-gray-200">
+    {txt}
+  </span>
+);
 
-  // Scroll helper
-  const scrollToBottom = () => {
-    requestAnimationFrame(() => {
-      cliBoxRef.current?.scrollTo({ top: cliBoxRef.current.scrollHeight, behavior: "smooth" });
-    });
+const hintLinesOnboard = [
+  "CLI: system support diagnostic-cli → show version",
+  "CLI: configure manager add <FMC_IP> <REG_KEY> → FMC: Add + Approve",
+];
+
+// ---------- Page ----------
+export default function PracticeContextual() {
+  // UI state
+  const [practice, setPractice] = useState<PracticeKey>("onboard");
+  const [steps, setSteps] = useState<boolean[]>([false, false, false]);
+  const [cliMode, setCliMode] = useState<"GUI" | "CLI">("GUI");
+  const [contextualTabsOnly, setContextualTabsOnly] = useState<boolean>(true);
+
+  // inputs
+  const [ftdIp, setFtdIp] = useState<string>("192.168.1.10");
+  const [regKey, setRegKey] = useState<string>("REGKEY123");
+
+  // device table
+  const [devices, setDevices] = useState<DeviceRow[]>([]);
+  const [showHints, setShowHints] = useState(false);
+
+  // progress calc
+  const progress = useMemo(() => steps.filter(Boolean).length, [steps]);
+
+  const resetSteps = () => setSteps([false, false, false]);
+  const resetState = () => {
+    setDevices([]);
+    setFtdIp("192.168.1.10");
+    setRegKey("REGKEY123");
+    setCliMode("GUI");
+    setContextualTabsOnly(true);
   };
 
-  const push = (line: string | string[]) => {
-    setCli((old) => {
-      const next = Array.isArray(line) ? [...old, ...line] : [...old, line];
+  // actions
+  const handleAddDevice = () => {
+    if (!ftdIp || !regKey) return;
+    const exists = devices.some((d) => d.ip === ftdIp);
+    if (exists) return;
+    const row: DeviceRow = {
+      ip: ftdIp.trim(),
+      regKey: regKey.trim(),
+      licenses: [],
+      state: "Pending",
+    };
+    setDevices((prev) => [...prev, row]);
+  };
+
+  const handleAssignLicenses = () => {
+    setDevices((prev) =>
+      prev.map((d) =>
+        d.state === "Pending" || d.state === "Registered"
+          ? { ...d, licenses: ["Threat", "URL"] }
+          : d
+      )
+    );
+  };
+
+  const approveDevice = (ip: string) => {
+    setDevices((prev) =>
+      prev.map((d) =>
+        d.ip === ip ? { ...d, state: "Approved" } : d
+      )
+    );
+  };
+
+  // mark a step as done/undone
+  const toggleStep = (idx: number) => {
+    setSteps((prev) => {
+      const next = [...prev];
+      next[idx] = !next[idx];
       return next;
     });
-    scrollToBottom();
   };
 
-  // ---------------------
-  // GUI button handlers
-  // ---------------------
-  const onAddNat = () => {
-    if (!echoOn) return;
-    push([
-      "> configure terminal",
-      "nat (inside,outside) source static OBJ_IN OBJ_OUT destination",
-      "static any any",
-      "write memory",
-      "",
-    ]);
-  };
-
-  const onCreateVpn = () => {
-    if (!echoOn) return;
-    push([
-      "> vpn wizard",
-      "peer 203.0.113.10 pre-shared-key *****",
-      "ikev2 enable",
-      "crypto map OUTSIDE-MAP 10 match address VPN-ACL",
-      "write memory",
-      "",
-    ]);
-  };
-
-  const onApplyPolicy = () => {
-    if (!echoOn) return;
-    push([
-      "> policy deploy",
-      "Pushing Access Control Policy to FTD...",
-      "Success.",
-      "",
-    ]);
-  };
-
-  // ---------------------
-  // CLI execution
-  // ---------------------
-  const runCmd = (raw: string) => {
-    const c = raw.trim();
-    if (!c) return;
-
-    // Echo the entered command
-    push(`> ${c}`);
-
-    // Mock responses
-    if (c === "show version") {
-      push([
-        "FTD 7.3.0 (mock build)  Model: FTDv  Managed by: FMC  License(s): Threat, URL",
-        "",
-      ]);
-    } else if (c === "show interface") {
-      push([
-        "Gig0/0 (inside) 10.1.1.1/24 up   Gig0/1 (outside) 172.16.0.1/24 up   Mgmt 192.168.1.10/24 up",
-        "",
-      ]);
-    } else if (c.startsWith("ping ")) {
-      push([
-        "Sending 5, 100-byte ICMP Echos...",
-        "!!!!!  Success rate is 100 percent (5/5), round-trip min/avg/max = 2/4/9 ms",
-        "",
-      ]);
-    } else if (c === "clear") {
-      setCli([]);
-    } else {
-      push(["(mock) command accepted.", ""]);
+  // easy practice label
+  const practiceLabel = useMemo(() => {
+    switch (practice) {
+      case "onboard":
+        return "Practice: Onboard";
+      case "acp":
+        return "Practice: Access Control";
+      case "nat":
+        return "Practice: NAT Policy";
+      case "s2s":
+        return "Practice: Site-to-Site VPN";
+      default:
+        return "Practice";
     }
-
-    setCmd("");
-  };
-
-  // Quick-add chips
-  const tryChip = (txt: string) => runCmd(txt);
+  }, [practice]);
 
   return (
     <div className="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* LEFT – GUI */}
-      <Card className="h-full">
-        <CardHeader className="items-start">
-          <div className="flex w-full items-center justify-between">
-            <CardTitle>GUI (Firewall Simulator)</CardTitle>
-
-            <div className="flex gap-2">
-              <Badge>Practice</Badge>
+      {/* LEFT – Practice Selector + Guided Practice */}
+      <div className="flex flex-col gap-6">
+        {/* Practice Selector */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Practice Selector</CardTitle>
+              <span className="text-sm text-gray-500">{progress}/3 done</span>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3">
               <Button
-                className={echoOn ? "bg-indigo-600 text-white" : ""}
-                onClick={() => setEchoOn((v) => !v)}
-                title="Toggle whether GUI actions should echo into CLI"
+                className={`${
+                  practice === "onboard" ? "bg-indigo-600 text-white" : ""
+                }`}
+                onClick={() => setPractice("onboard")}
               >
-                Echo GUI → CLI: {echoOn ? "ON" : "OFF"}
+                Onboard to FMC
+              </Button>
+              <Button
+                className={`${practice === "acp" ? "bg-indigo-600 text-white" : ""}`}
+                onClick={() => setPractice("acp")}
+              >
+                Access Control Policy
+              </Button>
+              <Button
+                className={`${practice === "nat" ? "bg-indigo-600 text-white" : ""}`}
+                onClick={() => setPractice("nat")}
+              >
+                NAT Policy
+              </Button>
+              <Button
+                className={`${practice === "s2s" ? "bg-indigo-600 text-white" : ""}`}
+                onClick={() => setPractice("s2s")}
+              >
+                Site-to-Site VPN
+              </Button>
+            </div>
+
+            <div className="mt-4 flex gap-3">
+              <Button variant="secondary" onClick={resetSteps}>
+                Reset Steps
+              </Button>
+              <Button variant="secondary" onClick={resetState}>
+                Reset State
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Guided Practice */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>FTD Guided Practice</CardTitle>
+              <div className="flex gap-2 items-center">
+                {pill(practiceLabel)}
+                {progress === 3 ? pill("Ready") : null}
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {/* Step 1 */}
+            <div className="flex items-start gap-3 mb-4">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={steps[0]}
+                onChange={() => toggleStep(0)}
+              />
+              <div>
+                <div className="font-medium">
+                  Step 1: Enter diagnostic CLI and check version
+                </div>
+                <div className="text-sm text-gray-500">
+                  Follow on the right. Mark complete when done.
+                </div>
+              </div>
+            </div>
+
+            {/* Step 2 */}
+            <div className="flex items-start gap-3 mb-4">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={steps[1]}
+                onChange={() => toggleStep(1)}
+              />
+              <div>
+                <div className="font-medium">
+                  Step 2: Add FMC manager from CLI with key
+                </div>
+                <div className="text-sm text-gray-500">
+                  Follow on the right. Mark complete when done.
+                </div>
+              </div>
+            </div>
+
+            {/* Step 3 */}
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={steps[2]}
+                onChange={() => toggleStep(2)}
+              />
+              <div>
+                <div className="font-medium">
+                  Step 3: Add device in FMC and Approve
+                </div>
+                <div className="text-sm text-gray-500">
+                  Follow on the right. Mark complete when done.
+                </div>
+              </div>
+            </div>
+
+            {practice === "onboard" ? (
+              <div className="text-xs text-gray-500 mt-6">
+                Only the relevant GUI tabs are shown for this practice to avoid
+                distraction.
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* RIGHT – Practice Surface */}
+      <Card className="h-full">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle>Practice Surface</CardTitle>
+            <div className="flex gap-2 items-center">
+              <Button
+                className={`${cliMode === "GUI" ? "bg-indigo-600 text-white" : ""}`}
+                onClick={() => setCliMode("GUI")}
+              >
+                GUI
+              </Button>
+              <Button
+                className={`${cliMode === "CLI" ? "bg-indigo-600 text-white" : ""}`}
+                onClick={() => setCliMode("CLI")}
+              >
+                CLI
               </Button>
             </div>
           </div>
         </CardHeader>
 
-        <CardContent className="flex flex-col gap-4">
-          <Button onClick={onAddNat}>
-            <span className="mr-2">➕</span> Add NAT Rule
-          </Button>
-
-          <Button onClick={onCreateVpn}>
-            <span className="mr-2">🔒</span> Create VPN
-          </Button>
-
-          <Button onClick={onApplyPolicy}>
-            <span className="mr-2">🛡️</span> Apply Policy
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* RIGHT – CLI */}
-      <Card className="h-full">
-        <CardHeader className="items-start">
-          <div className="flex w-full items-center justify-between">
-            <CardTitle>CLI Simulator</CardTitle>
-
-            <div className="flex gap-2">
-              <Badge>Try:</Badge>
-              <Button onClick={() => tryChip("show version")}>show version</Button>
-              <Button onClick={() => tryChip("show interface")}>show interface</Button>
-              <Button onClick={() => tryChip("ping 8.8.8.8")}>ping 8.8.8.8</Button>
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent className="space-y-4">
-          {/* CLI output */}
-          <div
-            ref={cliBoxRef}
-            className="h-72 w-full rounded-xl bg-black text-green-300 font-mono text-sm p-4 overflow-auto"
-          >
-            {cli.map((line, i) => (
-              <div key={i} className="whitespace-pre-wrap">
-                {line}
+        <CardContent>
+          {/* FMC GUI (Onboard) */}
+          {cliMode === "GUI" && practice === "onboard" && (
+            <div className="rounded-2xl border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <CardTitle className="text-base">
+                  FMC GUI (Practice: Onboard)
+                </CardTitle>
+                <Button
+                  variant="secondary"
+                  onClick={() => setContextualTabsOnly((v) => !v)}
+                >
+                  {contextualTabsOnly ? "Contextual Tabs Only" : "All Tabs"}
+                </Button>
               </div>
-            ))}
-          </div>
 
-          {/* CLI input */}
-          <div className="flex gap-2">
-            <Input
-              placeholder="Enter command… (try: show version, show interface, ping 8.8.8.8, clear)"
-              value={cmd}
-              onChange={(e) => setCmd(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") runCmd(cmd);
-              }}
-            />
-            <Button onClick={() => runCmd(cmd)}>Run</Button>
-          </div>
+              {/* Form */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <div className="text-sm text-gray-600 mb-1">FTD Mgmt IP</div>
+                  <Input value={ftdIp} onChange={(e) => setFtdIp(e.target.value)} />
+                </div>
+                <div>
+                  <div className="text-sm text-gray-600 mb-1">Registration Key</div>
+                  <Input value={regKey} onChange={(e) => setRegKey(e.target.value)} />
+                </div>
+              </div>
 
-          {/* Practice / Steps / Hints */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+              <div className="flex gap-3 mt-4">
+                <Button onClick={handleAddDevice}>Add Device</Button>
+                <Button onClick={handleAssignLicenses}>Assign Licenses</Button>
+              </div>
+
+              <div className="text-sm text-gray-500 mt-3">
+                Awaiting device registration…
+              </div>
+
+              {/* table */}
+              <div className="mt-4 border rounded-xl overflow-hidden">
+                <div className="grid grid-cols-5 bg-gray-50 text-sm font-medium py-2 px-3">
+                  <div>IP</div>
+                  <div>Reg Key</div>
+                  <div>Licenses</div>
+                  <div>State</div>
+                  <div>Action</div>
+                </div>
+                {devices.length === 0 ? (
+                  <div className="p-3 text-sm text-gray-500">No devices yet.</div>
+                ) : (
+                  devices.map((d) => (
+                    <div
+                      key={d.ip}
+                      className="grid grid-cols-5 items-center border-t py-2 px-3 text-sm"
+                    >
+                      <div>{d.ip}</div>
+                      <div>{d.regKey}</div>
+                      <div>{d.licenses.join(", ") || "-"}</div>
+                      <div>{d.state}</div>
+                      <div className="flex gap-2">
+                        {d.state !== "Approved" && (
+                          <Button size="sm" onClick={() => approveDevice(d.ip)}>
+                            Approve
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* CLI view (mock) */}
+          {cliMode === "CLI" && (
+            <div className="rounded-2xl border border-gray-200 p-4 space-y-3">
+              <CardTitle className="text-base">FTD Diagnostic CLI</CardTitle>
+              <div className="h-72 bg-black text-green-300 rounded-xl p-4 font-mono text-sm overflow-auto">
+                <div>&gt; system support diagnostic-cli</div>
+                <div># show version</div>
+                <div>FTD 7.3.0 (mock build)  Model: FTDv</div>
+                <div># configure manager add {ftdIp || "192.168.1.10"} {regKey || "REGKEY123"}</div>
+                <div>Manager added. Awaiting approval in FMC…</div>
+                <div className="mt-2"># exit</div>
+              </div>
+            </div>
+          )}
+
+          {/* Practice Hints */}
+          <div className="mt-6">
             <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Steps</CardTitle>
-              </CardHeader>
-              <CardContent className="text-sm space-y-1">
-                <div>1) Add a NAT rule (GUI) then verify with <code>show interface</code>.</div>
-                <div>2) Create a site-to-site VPN (GUI).</div>
-                <div>3) Deploy policy (GUI) and ping 8.8.8.8.</div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
+              <CardHeader className="flex-row items-center justify-between">
                 <CardTitle className="text-base">Hints</CardTitle>
+                <Button variant="secondary" onClick={() => setShowHints((v) => !v)}>
+                  {showHints ? "Hide hints" : "Peek if stuck"}
+                </Button>
               </CardHeader>
-              <CardContent className="text-sm space-y-1">
-                <div>• Toggle <b>Echo GUI → CLI</b> to inject GUI actions into CLI output.</div>
-                <div>• Use <code>clear</code> to wipe the terminal.</div>
-                <div>• These commands are mocked for practice flow.</div>
-              </CardContent>
+              {showHints && (
+                <CardContent>
+                  <ul className="list-disc ml-5 space-y-1 text-sm">
+                    {practice === "onboard" ? (
+                      hintLinesOnboard.map((h) => <li key={h}>{h}</li>)
+                    ) : (
+                      <li>Guidance for this practice will appear here.</li>
+                    )}
+                  </ul>
+                </CardContent>
+              )}
             </Card>
           </div>
         </CardContent>
